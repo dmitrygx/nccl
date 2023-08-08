@@ -38,6 +38,7 @@ ncclResult_t wrap_ibv_close_device(struct ibv_context *context);
 ncclResult_t wrap_ibv_get_async_event(struct ibv_context *context, struct ibv_async_event *event);
 ncclResult_t wrap_ibv_ack_async_event(struct ibv_async_event *event);
 ncclResult_t wrap_ibv_query_device(struct ibv_context *context, struct ibv_device_attr *device_attr);
+ncclResult_t wrap_ibv_query_device_ex(struct ibv_context *context, const struct ibv_query_device_ex_input *input, struct ibv_device_attr_ex *attr);
 ncclResult_t wrap_ibv_query_port(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr);
 ncclResult_t wrap_ibv_query_gid(struct ibv_context *context, uint8_t port_num, int index, union ibv_gid *gid);
 ncclResult_t wrap_ibv_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask, struct ibv_qp_init_attr *init_attr);
@@ -53,6 +54,7 @@ ncclResult_t wrap_ibv_dereg_mr(struct ibv_mr *mr);
 ncclResult_t wrap_ibv_create_comp_channel(struct ibv_comp_channel **ret, struct ibv_context *context);
 ncclResult_t wrap_ibv_destroy_comp_channel(struct ibv_comp_channel *channel);
 ncclResult_t wrap_ibv_create_cq(struct ibv_cq **ret, struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector);
+ncclResult_t wrap_ibv_create_cq_ex(struct ibv_cq_ex **ret, struct ibv_context *context, struct ibv_cq_init_attr_ex *init_attr);
 ncclResult_t wrap_ibv_destroy_cq(struct ibv_cq *cq);
 static inline ncclResult_t wrap_ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc, int* num_done) {
   int done = cq->context->ops.poll_cq(cq, num_entries, wc); /*returns the number of wcs or 0 on success, a negative number otherwise*/
@@ -62,6 +64,57 @@ static inline ncclResult_t wrap_ibv_poll_cq(struct ibv_cq *cq, int num_entries, 
   }
   *num_done = done;
   return ncclSuccess;
+}
+static inline ibv_cq* wrap_ibv_cq_ex_to_cq(struct ibv_cq_ex *cq_ex) {
+  return (struct ibv_cq*)cq_ex;
+}
+static inline ncclResult_t wrap_ibv_start_poll(struct ibv_cq_ex *cq, struct ibv_poll_cq_attr *attr, int *done)
+{
+  int ret = cq->start_poll(cq, attr);
+  if (ret && ret != ENOENT) {
+    WARN("Call to ibv_start_poll() returned %d", ret);
+    *done = 0;
+    return ncclSystemError;
+  }
+  *done = (ret != ENOENT);
+	return ncclSuccess;
+}
+
+static inline ncclResult_t wrap_ibv_next_poll(struct ibv_cq_ex *cq, int *done)
+{
+  int ret = cq->next_poll(cq);
+  if (ret && ret != ENOENT) {
+    WARN("Call to ibv_next_poll() returned %d", ret);
+    *done = 0;
+    return ncclSystemError;
+  }
+  *done = (ret != ENOENT);
+	return ncclSuccess;
+}
+
+static inline void wrap_ibv_end_poll(struct ibv_cq_ex *cq)
+{
+	cq->end_poll(cq);
+}
+static inline uint64_t wrap_ibv_wc_read_completion_ts(struct ibv_cq_ex *cq)
+{
+	return cq->read_completion_ts(cq);
+}
+static inline enum ibv_wc_opcode wrap_ibv_wc_read_opcode(struct ibv_cq_ex *cq)
+{
+	return cq->read_opcode(cq);
+}
+static inline uint32_t wrap_ibv_wc_read_vendor_err(struct ibv_cq_ex *cq)
+{
+	return cq->read_vendor_err(cq);
+}
+static inline uint32_t wrap_ibv_wc_read_byte_len(struct ibv_cq_ex *cq)
+{
+	return cq->read_byte_len(cq);
+}
+static inline __be32 wrap_ibv_wc_read_imm_data(struct ibv_cq_ex *cq)
+{
+	return cq->read_imm_data(cq);
 }
 ncclResult_t wrap_ibv_create_qp(struct ibv_qp **ret, struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
 ncclResult_t wrap_ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask);

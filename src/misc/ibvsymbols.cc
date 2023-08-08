@@ -34,6 +34,7 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
   ASSIGN_SYM(ibvSymbols, ibv_get_async_event, ibv_internal_get_async_event);
   ASSIGN_SYM(ibvSymbols, ibv_ack_async_event, ibv_internal_ack_async_event);
   ASSIGN_SYM(ibvSymbols, ibv_query_device, ibv_internal_query_device);
+  ASSIGN_SYM(ibvSymbols, "ibv_query_device_ex", ibv_internal_query_device_ex);
   ASSIGN_SYM(ibvSymbols, ibv_query_gid, ibv_internal_query_gid);
   ASSIGN_SYM(ibvSymbols, ibv_query_qp, ibv_internal_query_qp);
   ASSIGN_SYM(ibvSymbols, ibv_alloc_pd, ibv_internal_alloc_pd);
@@ -44,6 +45,7 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
 
   ASSIGN_SYM(ibvSymbols, ibv_dereg_mr, ibv_internal_dereg_mr);
   ASSIGN_SYM(ibvSymbols, ibv_create_cq, ibv_internal_create_cq);
+  ASSIGN_SYM(ibvSymbols, "ibv_create_cq_ex", ibv_internal_create_cq_ex);
   ASSIGN_SYM(ibvSymbols, ibv_destroy_cq, ibv_internal_destroy_cq);
   ASSIGN_SYM(ibvSymbols, ibv_create_qp, ibv_internal_create_qp);
   ASSIGN_SYM(ibvSymbols, ibv_modify_qp, ibv_internal_modify_qp);
@@ -104,6 +106,7 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
   LOAD_SYM(ibvhandle, "ibv_get_async_event", ibvSymbols->ibv_internal_get_async_event);
   LOAD_SYM(ibvhandle, "ibv_ack_async_event", ibvSymbols->ibv_internal_ack_async_event);
   LOAD_SYM(ibvhandle, "ibv_query_device", ibvSymbols->ibv_internal_query_device);
+  LOAD_SYM(ibvhandle, "ibv_query_device_ex", ibvSymbols->ibv_internal_query_device_ex);
   LOAD_SYM(ibvhandle, "ibv_query_port", ibvSymbols->ibv_internal_query_port);
   LOAD_SYM(ibvhandle, "ibv_query_gid", ibvSymbols->ibv_internal_query_gid);
   LOAD_SYM(ibvhandle, "ibv_query_qp", ibvSymbols->ibv_internal_query_qp);
@@ -116,6 +119,7 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
   LOAD_SYM_VERSION(ibvhandle, "ibv_reg_dmabuf_mr", ibvSymbols->ibv_internal_reg_dmabuf_mr, "IBVERBS_1.12");
   LOAD_SYM(ibvhandle, "ibv_dereg_mr", ibvSymbols->ibv_internal_dereg_mr);
   LOAD_SYM(ibvhandle, "ibv_create_cq", ibvSymbols->ibv_internal_create_cq);
+  LOAD_SYM(ibvhandle, "ibv_create_cq_ex", ibvSymbols->ibv_internal_create_cq_ex);
   LOAD_SYM(ibvhandle, "ibv_destroy_cq", ibvSymbols->ibv_internal_destroy_cq);
   LOAD_SYM(ibvhandle, "ibv_create_qp", ibvSymbols->ibv_internal_create_qp);
   LOAD_SYM(ibvhandle, "ibv_modify_qp", ibvSymbols->ibv_internal_modify_qp);
@@ -134,6 +138,7 @@ teardown:
   ibvSymbols->ibv_internal_get_async_event = NULL;
   ibvSymbols->ibv_internal_ack_async_event = NULL;
   ibvSymbols->ibv_internal_query_device = NULL;
+  ibvSymbols->ibv_internal_query_device_ex = NULL;
   ibvSymbols->ibv_internal_query_port = NULL;
   ibvSymbols->ibv_internal_query_gid = NULL;
   ibvSymbols->ibv_internal_query_qp = NULL;
@@ -144,6 +149,7 @@ teardown:
   ibvSymbols->ibv_internal_reg_dmabuf_mr = NULL;
   ibvSymbols->ibv_internal_dereg_mr = NULL;
   ibvSymbols->ibv_internal_create_cq = NULL;
+  ibvSymbols->ibv_internal_create_cq_ex = NULL;
   ibvSymbols->ibv_internal_destroy_cq = NULL;
   ibvSymbols->ibv_internal_create_qp = NULL;
   ibvSymbols->ibv_internal_modify_qp = NULL;

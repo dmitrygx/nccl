@@ -110,6 +110,10 @@ ncclResult_t wrap_ibv_query_device(struct ibv_context *context, struct ibv_devic
   IBV_INT_CHECK_RET_ERRNO(ibvSymbols, ibv_internal_query_device, ibv_internal_query_device(context, device_attr), 0, "ibv_query_device");
 }
 
+ncclResult_t wrap_ibv_query_device_ex(struct ibv_context *context, const struct ibv_query_device_ex_input *input, struct ibv_device_attr_ex *attr) {
+  IBV_INT_CHECK_RET_ERRNO(ibvSymbols, ibv_internal_query_device_ex, ibv_internal_query_device_ex(context, input, attr), 0, "ibv_query_device_ex");
+}
+
 ncclResult_t wrap_ibv_query_port(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
   IBV_INT_CHECK_RET_ERRNO(ibvSymbols, ibv_internal_query_port, ibv_internal_query_port(context, port_num, port_attr), 0, "ibv_query_port");
 }
@@ -169,6 +173,10 @@ ncclResult_t wrap_ibv_dereg_mr(struct ibv_mr *mr) { /*returns 0 on success, or t
 
 ncclResult_t wrap_ibv_create_cq(struct ibv_cq **ret, struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector) {
   IBV_PTR_CHECK_ERRNO(ibvSymbols, ibv_internal_create_cq, ibv_internal_create_cq(context, cqe, cq_context, channel, comp_vector), *ret, NULL, "ibv_create_cq");
+}
+
+ncclResult_t wrap_ibv_create_cq_ex(struct ibv_cq_ex **ret, struct ibv_context *context, struct ibv_cq_init_attr_ex *init_attr) {
+  IBV_PTR_CHECK_ERRNO(ibvSymbols, ibv_internal_create_cq_ex, ibv_internal_create_cq_ex(context, init_attr), *ret, NULL, "ibv_create_cqex");
 }
 
 ncclResult_t wrap_ibv_destroy_cq(struct ibv_cq *cq) {

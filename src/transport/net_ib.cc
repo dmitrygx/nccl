@@ -58,6 +58,7 @@ struct alignas(64) ncclIbDev {
   int maxQp;
   struct ncclIbMrCache mrCache;
   int ar; // ADAPTIVE_ROUTING
+  uint64_t completion_timestamp_mask;
 };
 
 #define MAX_IB_PORT 15
@@ -82,6 +83,7 @@ NCCL_PARAM(IbTc, "IB_TC", 0);
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
+NCCL_PARAM(IbUseCqTs, "IB_USE_CQ_TS", 0);
 
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
@@ -201,6 +203,25 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           if (ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
           continue;
         }
+
+        uint64_t completion_timestamp_mask = 0;
+        if (ncclParamIbUseCqTs() == 1) {
+          struct ibv_device_attr_ex devExAttr;
+          memset(&devExAttr, 0, sizeof(devExAttr));
+          if (ncclSuccess != wrap_ibv_query_device_ex(context, NULL, &devExAttr)) {
+            WARN("NET/IB : Unable to query device %s", devices[d]->name);
+            if (ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
+            continue;
+          }
+
+          if (!devExAttr.completion_timestamp_mask) {
+            WARN("NET/IB : CQ timestamps requested, but unsupoorted by %s", devices[d]->name);
+            if (ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
+            continue;
+          }
+          completion_timestamp_mask = devExAttr.completion_timestamp_mask;
+        }
+
         for (int port = 1; port <= devAttr.phys_port_cnt; port++) {
           struct ibv_port_attr portAttr;
           if (ncclSuccess != wrap_ibv_query_port(context, port, &portAttr)) {
@@ -237,6 +258,8 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           // But allow it to be overloaded by an env parameter
           ncclIbDevs[ncclNIbDevs].ar = (portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND) ? 1 : 0;
           if (ncclParamIbAdaptiveRouting() != -2) ncclIbDevs[ncclNIbDevs].ar = ncclParamIbAdaptiveRouting();
+
+          ncclIbDevs[ncclNIbDevs].completion_timestamp_mask = completion_timestamp_mask;
 
           pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
           ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
@@ -418,7 +441,10 @@ struct ncclIbRequest {
 struct ncclIbVerbs {
   int dev;
   struct ibv_pd* pd; // duplicate of ncclIbDevs[dev].pd
-  struct ibv_cq* cq;
+  union {
+    struct ibv_cq* cq;
+    struct ibv_cq_ex* cq_ex;
+  };
   uint64_t pad[1];
   struct ncclIbRequest reqs[MAX_REQUESTS];
 };
@@ -494,6 +520,10 @@ static_assert((offsetof(struct ncclIbRecvComm, remFifo) % 32) == 0, "ncclIbSendC
 
 NCCL_PARAM(IbQpsPerConn, "IB_QPS_PER_CONNECTION", 1);
 
+static inline ibv_cq* ncclIbVerbsCq(struct ncclIbVerbs* verbs) {
+  return (!ncclIbDevs[verbs->dev].completion_timestamp_mask) ? verbs->cq : wrap_ibv_cq_ex_to_cq(verbs->cq_ex);
+}
+
 ncclResult_t ncclIbInitVerbs(int dev, struct ibv_context* ctx, struct ncclIbVerbs* verbs) {
   verbs->dev = dev;
 
@@ -511,13 +541,25 @@ ncclResult_t ncclIbInitVerbs(int dev, struct ibv_context* ctx, struct ncclIbVerb
   pthread_mutex_unlock(&ncclIbDevs[dev].lock);
 
   // Recv requests can generate 2 completions (one for the post FIFO, one for the Recv).
-  NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, 2*MAX_REQUESTS*ncclParamIbQpsPerConn(), NULL, NULL, 0));
+  if (!ncclIbDevs[dev].completion_timestamp_mask) {
+    NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, 2*MAX_REQUESTS*ncclParamIbQpsPerConn(), NULL, NULL, 0));
+  } else {
+    struct ibv_cq_init_attr_ex attr_ex = {
+			.cqe = 2*MAX_REQUESTS*(uint32_t)ncclParamIbQpsPerConn(),
+			.cq_context = NULL,
+			.channel = NULL,
+			.comp_vector = 0,
+			.wc_flags = IBV_WC_EX_WITH_COMPLETION_TIMESTAMP
+		};
+
+    NCCLCHECK(wrap_ibv_create_cq_ex(&verbs->cq_ex, ctx, &attr_ex));
+  }
   return ncclSuccess;
 }
 
 ncclResult_t ncclIbDestroyVerbs(struct ncclIbVerbs* verbs) {
   ncclResult_t res;
-  NCCLCHECK(wrap_ibv_destroy_cq(verbs->cq));
+  NCCLCHECK(wrap_ibv_destroy_cq(ncclIbVerbsCq(verbs)));
 
   pthread_mutex_lock(&ncclIbDevs[verbs->dev].lock);
   if (0 == --ncclIbDevs[verbs->dev].pdRefs) {
@@ -532,8 +574,8 @@ returning:
 ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbVerbs* verbs, int access_flags, struct ibv_qp** qp) {
   struct ibv_qp_init_attr qpInitAttr;
   memset(&qpInitAttr, 0, sizeof(struct ibv_qp_init_attr));
-  qpInitAttr.send_cq = verbs->cq;
-  qpInitAttr.recv_cq = verbs->cq;
+  qpInitAttr.send_cq = ncclIbVerbsCq(verbs);
+  qpInitAttr.recv_cq = ncclIbVerbsCq(verbs);
   qpInitAttr.qp_type = IBV_QPT_RC;
   // We might send 2 messages per send (RDMA and RDMA_WITH_IMM)
   qpInitAttr.cap.max_send_wr = 2*MAX_REQUESTS;
@@ -1258,6 +1300,51 @@ ncclResult_t ncclIbIflush(void* recvComm, int n, void** data, int* sizes, void**
   return ncclSuccess;
 }
 
+static inline ncclResult_t ncclIbProcessWc(struct ncclIbRequest *r, uint64_t wr_id, enum ibv_wc_status status,
+                                           enum ibv_wc_opcode opcode, uint32_t byte_len, uint32_t vendor_err,
+                                           __be32 imm_data) {
+  if (status != IBV_WC_SUCCESS) {
+    char line[SOCKET_NAME_MAXLEN+1];
+    union ncclSocketAddress addr;
+    ncclSocketGetAddr(r->sock, &addr);
+    char localGidString[INET6_ADDRSTRLEN] = "";
+    char remoteGidString[INET6_ADDRSTRLEN] = "";
+    const char* localGidStr = NULL, *remoteGidStr = NULL;
+    if (r->gidInfo) {
+      localGidStr = inet_ntop(AF_INET6, &r->gidInfo->localGid, localGidString, sizeof(localGidString));
+      remoteGidStr = inet_ntop(AF_INET6, &r->gidInfo->remoteGid, remoteGidString, sizeof(remoteGidString));
+    }
+    WARN("NET/IB : Got completion from peer %s with error %d, opcode %d, len %d, vendor err %d (%s)%s%s%s%s",
+          ncclSocketToString(&addr, line), status, opcode, byte_len, vendor_err, reqTypeStr[r->type],
+          localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGid ":"", remoteGidString);
+    return ncclRemoteError;
+  }
+
+  struct ncclIbRequest* req = r->verbs->reqs+(wr_id & 0xff);
+  if (req->type == NCCL_NET_IB_REQ_SEND) {
+    for (int i=0; i<req->nreqs; i++) {
+      struct ncclIbRequest* sendReq = r->verbs->reqs+((wr_id >> (i*8)) & 0xff);
+      if ((sendReq->events <= 0)) return ncclInternalError;
+        sendReq->events--;
+    }
+  } else {
+    if (req && opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+    if (req->type != NCCL_NET_IB_REQ_RECV) return ncclInternalError;
+      if (req->nreqs > 1) {
+        // In the case of a multi recv, we only set sizes to 0 or 1.
+        for (int i=0; i<req->nreqs; i++) {
+          req->recv.sizes[i] = (imm_data >> i) & 0x1;
+        }
+      } else {
+        req->recv.sizes[0] += imm_data;
+      }
+    }
+    req->events--;
+  }
+
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
@@ -1272,52 +1359,49 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
       return ncclSuccess;
     }
 
-    int wrDone = 0;
-    struct ibv_wc wcs[4];
-    TIME_START(3);
-    NCCLCHECK(wrap_ibv_poll_cq(r->verbs->cq, 4, wcs, &wrDone));
-    if (wrDone == 0) { TIME_CANCEL(3); } else { TIME_STOP(3); }
-    if (wrDone == 0) return ncclSuccess;
+    if (!ncclIbDevs[r->verbs->dev].completion_timestamp_mask) {
+      int wrDone = 0;
+      struct ibv_wc wcs[4];
+      TIME_START(3);
 
-    for (int w=0; w<wrDone; w++) {
-      struct ibv_wc *wc = wcs+w;
-      if (wc->status != IBV_WC_SUCCESS) {
-        char line[SOCKET_NAME_MAXLEN+1];
-        union ncclSocketAddress addr;
-        ncclSocketGetAddr(r->sock, &addr);
-        char localGidString[INET6_ADDRSTRLEN] = "";
-        char remoteGidString[INET6_ADDRSTRLEN] = "";
-        const char* localGidStr = NULL, *remoteGidStr = NULL;
-        if (r->gidInfo) {
-            localGidStr = inet_ntop(AF_INET6, &r->gidInfo->localGid, localGidString, sizeof(localGidString));
-            remoteGidStr = inet_ntop(AF_INET6, &r->gidInfo->remoteGid, remoteGidString, sizeof(remoteGidString));
-        }
-        WARN("NET/IB : Got completion from peer %s with error %d, opcode %d, len %d, vendor err %d (%s)%s%s%s%s",
-            ncclSocketToString(&addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err, reqTypeStr[r->type],
-            localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGid ":"", remoteGidString);
-        return ncclRemoteError;
+      NCCLCHECK(wrap_ibv_poll_cq(r->verbs->cq, 4, wcs, &wrDone));
+      if (wrDone == 0) {
+        TIME_CANCEL(3);
+        return ncclSuccess;
+      } else {
+        TIME_STOP(3);
       }
 
-      struct ncclIbRequest* req = r->verbs->reqs+(wc->wr_id & 0xff);
-      if (req->type == NCCL_NET_IB_REQ_SEND) {
-        for (int i=0; i<req->nreqs; i++) {
-          struct ncclIbRequest* sendReq = r->verbs->reqs+((wc->wr_id >> (i*8)) & 0xff);
-          if ((sendReq->events <= 0)) return ncclInternalError;
-          sendReq->events--;
-        }
+      for (int w=0; w<wrDone; w++) {
+        struct ibv_wc *wc = wcs+w;
+        ncclResult_t ret = ncclIbProcessWc(r, wc->wr_id, wc->status, wc->opcode,
+                                           wc->byte_len, wc->vendor_err, wc->imm_data);
+        if (ret != ncclSuccess)
+          return ret;
+      }
+    } else {
+      assert(ncclParamIbUseCqTs() == 1);
+
+      int wrDone;
+      struct ibv_poll_cq_attr attr = {};
+      TIME_START(3);
+      NCCLCHECK(wrap_ibv_start_poll(r->verbs->cq_ex, &attr, &wrDone));
+      if (wrDone == 0) {
+        TIME_CANCEL(3);
+        wrap_ibv_end_poll(r->verbs->cq_ex);
+        return ncclSuccess;
       } else {
-        if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-          if (req->type != NCCL_NET_IB_REQ_RECV) return ncclInternalError;
-          if (req->nreqs > 1) {
-            // In the case of a multi recv, we only set sizes to 0 or 1.
-            for (int i=0; i<req->nreqs; i++) {
-              req->recv.sizes[i] = (wc->imm_data >> i) & 0x1;
-            }
-          } else {
-            req->recv.sizes[0] += wc->imm_data;
-          }
-        }
-        req->events--;
+        TIME_STOP(3);
+      }
+
+      ncclResult_t ret = ncclIbProcessWc(r, r->verbs->cq_ex->wr_id, r->verbs->cq_ex->status,
+                                         wrap_ibv_wc_read_opcode(r->verbs->cq_ex),
+                                         wrap_ibv_wc_read_byte_len(r->verbs->cq_ex),
+                                         wrap_ibv_wc_read_vendor_err(r->verbs->cq_ex),
+                                         wrap_ibv_wc_read_imm_data(r->verbs->cq_ex));
+      if (ret != ncclSuccess) {
+        wrap_ibv_end_poll(r->verbs->cq_ex);
+        return ret;
       }
     }
   }

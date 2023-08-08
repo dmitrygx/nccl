@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <linux/types.h>
 
 #if __GNUC__ >= 3
 #  define __attribute_const __attribute__((const))
@@ -134,6 +135,104 @@ struct ibv_device_attr {
 	uint16_t		max_pkeys;
 	uint8_t			local_ca_ack_delay;
 	uint8_t			phys_port_cnt;
+};
+
+struct ibv_odp_caps {
+	uint64_t general_caps;
+	struct {
+		uint32_t rc_odp_caps;
+		uint32_t uc_odp_caps;
+		uint32_t ud_odp_caps;
+	} per_transport_caps;
+};
+
+enum ibv_odp_general_caps {
+	IBV_ODP_SUPPORT = 1 << 0,
+	IBV_ODP_SUPPORT_IMPLICIT = 1 << 1,
+};
+
+struct ibv_tso_caps {
+	uint32_t max_tso;
+	uint32_t supported_qpts;
+};
+
+struct ibv_rss_caps {
+	uint32_t supported_qpts;
+	uint32_t max_rwq_indirection_tables;
+	uint32_t max_rwq_indirection_table_size;
+	uint64_t rx_hash_fields_mask; /* enum ibv_rx_hash_fields */
+	uint8_t  rx_hash_function; /* enum ibv_rx_hash_function_flags */
+};
+
+struct ibv_packet_pacing_caps {
+	uint32_t qp_rate_limit_min;
+	uint32_t qp_rate_limit_max; /* In kbps */
+	uint32_t supported_qpts;
+};
+
+enum ibv_raw_packet_caps {
+	IBV_RAW_PACKET_CAP_CVLAN_STRIPPING	= 1 << 0,
+	IBV_RAW_PACKET_CAP_SCATTER_FCS		= 1 << 1,
+	IBV_RAW_PACKET_CAP_IP_CSUM		= 1 << 2,
+	IBV_RAW_PACKET_CAP_DELAY_DROP		= 1 << 3,
+};
+
+enum ibv_tm_cap_flags {
+	IBV_TM_CAP_RC		    = 1 << 0,
+};
+
+struct ibv_tm_caps {
+	/* Max size of rendezvous request header */
+	uint32_t max_rndv_hdr_size;
+	/* Max number of tagged buffers in a TM-SRQ matching list */
+	uint32_t max_num_tags;
+	/* From enum ibv_tm_cap_flags */
+	uint32_t flags;
+	/* Max number of outstanding list operations */
+	uint32_t max_ops;
+	/* Max number of SGEs in a tagged buffer */
+	uint32_t max_sge;
+};
+
+struct ibv_cq_moderation_caps {
+	uint16_t max_cq_count;
+	uint16_t max_cq_period; /* in micro seconds */
+};
+
+enum ibv_pci_atomic_op_size {
+	IBV_PCI_ATOMIC_OPERATION_4_BYTE_SIZE_SUP = 1 << 0,
+	IBV_PCI_ATOMIC_OPERATION_8_BYTE_SIZE_SUP = 1 << 1,
+	IBV_PCI_ATOMIC_OPERATION_16_BYTE_SIZE_SUP = 1 << 2,
+};
+
+/*
+ * Bitmask for supported operation sizes
+ * Use enum ibv_pci_atomic_op_size
+ */
+struct ibv_pci_atomic_caps {
+	uint16_t fetch_add;
+	uint16_t swap;
+	uint16_t compare_swap;
+};
+
+struct ibv_device_attr_ex {
+	struct ibv_device_attr	orig_attr;
+	uint32_t		comp_mask;
+	struct ibv_odp_caps	odp_caps;
+	uint64_t		completion_timestamp_mask;
+	uint64_t		hca_core_clock;
+	uint64_t		device_cap_flags_ex;
+	struct ibv_tso_caps	tso_caps;
+	struct ibv_rss_caps     rss_caps;
+	uint32_t		max_wq_type_rq;
+	struct ibv_packet_pacing_caps packet_pacing_caps;
+	uint32_t		raw_packet_caps; /* Use ibv_raw_packet_caps */
+	struct ibv_tm_caps	tm_caps;
+	struct ibv_cq_moderation_caps  cq_mod_caps;
+	uint64_t max_dm_size;
+	struct ibv_pci_atomic_caps pci_atomic_caps;
+	uint32_t xrc_odp_caps;
+	uint32_t phys_port_cnt_ex;
 };
 
 enum ibv_mtu {
@@ -292,6 +391,21 @@ enum ibv_wc_opcode {
  */
 	IBV_WC_RECV			= 1 << 7,
 	IBV_WC_RECV_RDMA_WITH_IMM
+};
+
+enum ibv_create_cq_wc_flags {
+	IBV_WC_EX_WITH_BYTE_LEN		= 1 << 0,
+	IBV_WC_EX_WITH_IMM		= 1 << 1,
+	IBV_WC_EX_WITH_QP_NUM		= 1 << 2,
+	IBV_WC_EX_WITH_SRC_QP		= 1 << 3,
+	IBV_WC_EX_WITH_SLID		= 1 << 4,
+	IBV_WC_EX_WITH_SL		= 1 << 5,
+	IBV_WC_EX_WITH_DLID_PATH_BITS	= 1 << 6,
+	IBV_WC_EX_WITH_COMPLETION_TIMESTAMP	= 1 << 7,
+	IBV_WC_EX_WITH_CVLAN		= 1 << 8,
+	IBV_WC_EX_WITH_FLOW_TAG		= 1 << 9,
+	IBV_WC_EX_WITH_TM_INFO		= 1 << 10,
+	IBV_WC_EX_WITH_COMPLETION_TIMESTAMP_WALLCLOCK	= 1 << 11,
 };
 
 enum ibv_wc_flags {
@@ -771,6 +885,73 @@ struct ibv_cq {
 	pthread_cond_t		cond;
 	uint32_t		comp_events_completed;
 	uint32_t		async_events_completed;
+};
+
+struct ibv_poll_cq_attr {
+	uint32_t comp_mask;
+};
+
+struct ibv_cq_init_attr_ex {
+	/* Minimum number of entries required for CQ */
+	uint32_t			cqe;
+	/* Consumer-supplied context returned for completion events */
+	void			*cq_context;
+	/* Completion channel where completion events will be queued.
+	 * May be NULL if completion events will not be used.
+	 */
+	struct ibv_comp_channel *channel;
+	/* Completion vector used to signal completion events.
+	 *  Must be < context->num_comp_vectors.
+	 */
+	uint32_t			comp_vector;
+	 /* Or'ed bit of enum ibv_create_cq_wc_flags. */
+	uint64_t		wc_flags;
+	/* compatibility mask (extended verb). Or'd flags of
+	 * enum ibv_cq_init_attr_mask
+	 */
+	uint32_t		comp_mask;
+	/* create cq attr flags - one or more flags from
+	 * enum ibv_create_cq_attr_flags
+	 */
+	uint32_t		flags;
+	struct ibv_pd		*parent_domain;
+};
+
+struct ibv_cq_ex {
+	struct ibv_context     *context;
+	struct ibv_comp_channel *channel;
+	void		       *cq_context;
+	uint32_t		handle;
+	int			cqe;
+
+	pthread_mutex_t		mutex;
+	pthread_cond_t		cond;
+	uint32_t		comp_events_completed;
+	uint32_t		async_events_completed;
+
+	uint32_t		comp_mask;
+	enum ibv_wc_status status;
+	uint64_t wr_id;
+	int (*start_poll)(struct ibv_cq_ex *current,
+			     struct ibv_poll_cq_attr *attr);
+	int (*next_poll)(struct ibv_cq_ex *current);
+	void (*end_poll)(struct ibv_cq_ex *current);
+	enum ibv_wc_opcode (*read_opcode)(struct ibv_cq_ex *current);
+	uint32_t (*read_vendor_err)(struct ibv_cq_ex *current);
+	uint32_t (*read_byte_len)(struct ibv_cq_ex *current);
+	__be32 (*read_imm_data)(struct ibv_cq_ex *current);
+	uint32_t (*read_qp_num)(struct ibv_cq_ex *current);
+	uint32_t (*read_src_qp)(struct ibv_cq_ex *current);
+	unsigned int (*read_wc_flags)(struct ibv_cq_ex *current);
+	uint32_t (*read_slid)(struct ibv_cq_ex *current);
+	uint8_t (*read_sl)(struct ibv_cq_ex *current);
+	uint8_t (*read_dlid_path_bits)(struct ibv_cq_ex *current);
+	uint64_t (*read_completion_ts)(struct ibv_cq_ex *current);
+	uint16_t (*read_cvlan)(struct ibv_cq_ex *current);
+	uint32_t (*read_flow_tag)(struct ibv_cq_ex *current);
+	void (*read_tm_info)(struct ibv_cq_ex *current,
+			     struct ibv_wc_tm_info *tm_info);
+	uint64_t (*read_completion_wallclock_ns)(struct ibv_cq_ex *current);
 };
 
 struct ibv_ah {

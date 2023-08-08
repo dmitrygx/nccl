@@ -20,6 +20,7 @@ struct ncclIbvSymbols {
   int (*ibv_internal_get_async_event)(struct ibv_context *context, struct ibv_async_event *event);
   void (*ibv_internal_ack_async_event)(struct ibv_async_event *event);
   int (*ibv_internal_query_device)(struct ibv_context *context, struct ibv_device_attr *device_attr);
+  int (*ibv_internal_query_device_ex)(struct ibv_context *context, const struct ibv_query_device_ex_input *input, struct ibv_device_attr_ex *attr);
   int (*ibv_internal_query_port)(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr);
   int (*ibv_internal_query_gid)(struct ibv_context *context, uint8_t port_num, int index, union ibv_gid *gid);
   int (*ibv_internal_query_qp)(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask, struct ibv_qp_init_attr *init_attr);
@@ -31,6 +32,7 @@ struct ncclIbvSymbols {
   struct ibv_mr * (*ibv_internal_reg_dmabuf_mr)(struct ibv_pd *pd, uint64_t offset, size_t length, uint64_t iova, int fd, int access);
   int (*ibv_internal_dereg_mr)(struct ibv_mr *mr);
   struct ibv_cq * (*ibv_internal_create_cq)(struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector);
+  struct ibv_cq_ex *(*ibv_internal_create_cq_ex)(struct ibv_context *context, struct ibv_cq_init_attr_ex *init_attr);
   int (*ibv_internal_destroy_cq)(struct ibv_cq *cq);
   struct ibv_qp * (*ibv_internal_create_qp)(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
   int (*ibv_internal_modify_qp)(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask);
