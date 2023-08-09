@@ -12,10 +12,24 @@
 #ifndef NCCL_IBVWRAP_H_
 #define NCCL_IBVWRAP_H_
 
+#include <cstdint>
+#ifndef container_of
+#define nccl_offsetof(_type, _member) \
+    ((unsigned long)&( ((_type*)0)->_member ))
+#define container_of(_ptr, _type, _member) \
+    ( (_type*)( (char*)(void*)(_ptr) - nccl_offsetof(_type, _member) )  )
+#endif
+
 #ifdef NCCL_BUILD_RDMA_CORE
 #include <infiniband/verbs.h>
 #else
 #include "ibvcore.h"
+#endif
+
+#ifdef NCCL_BUILD_MLX5DV
+#include <infiniband/mlx5dv.h>
+#else
+
 #endif
 
 #include "core.h"
@@ -28,6 +42,7 @@ typedef enum ibv_return_enum
 } ibv_return_t;
 
 ncclResult_t wrap_ibv_symbols(void);
+ncclResult_t wrap_mlx5_symbols(void);
 /* NCCL wrappers of IB verbs functions */
 ncclResult_t wrap_ibv_fork_init(void);
 ncclResult_t wrap_ibv_get_device_list(struct ibv_device ***ret, int *num_devices);
@@ -139,5 +154,8 @@ static inline ncclResult_t wrap_ibv_post_recv(struct ibv_qp *qp, struct ibv_recv
 }
 
 ncclResult_t wrap_ibv_event_type_str(char **ret, enum ibv_event_type event);
+
+ncclResult_t wrap_mlx5dv_get_clock_info(struct ibv_context *ctx_in, struct mlx5dv_clock_info *clock_info);
+uint64_t wrap_mlx5dv_ts_to_ns(struct mlx5dv_clock_info *clock_info, uint64_t device_timestamp);
 
 #endif //End include guard

@@ -7,6 +7,10 @@
 #include "ibvcore.h"
 #endif
 
+#ifdef NCCL_BUILD_RDMA_CORE
+#include <infiniband/mlx5dv.h>
+#endif
+
 #include "nccl.h"
 
 /* IB Verbs Function Pointers*/
@@ -44,3 +48,14 @@ struct ncclIbvSymbols {
 ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols);
 
 #endif  // NCCL_IBV_SYMBOLS_H_
+
+#ifdef NCCL_BUILD_MLX5DV
+
+struct ncclMlx5Symbols {
+  int (*mlx5dv_internal_get_clock_info)(struct ibv_context *ctx_in, struct mlx5dv_clock_info *clock_info);
+  uint64_t (*mlx5dv_internal_ts_to_ns)(struct mlx5dv_clock_info *clock_info, uint64_t device_timestamp);
+};
+
+ncclResult_t buildMlx5Symbols(struct ncclMlx5Symbols* ibvSymbols);
+
+#endif

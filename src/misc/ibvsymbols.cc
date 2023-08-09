@@ -34,7 +34,7 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
   ASSIGN_SYM(ibvSymbols, ibv_get_async_event, ibv_internal_get_async_event);
   ASSIGN_SYM(ibvSymbols, ibv_ack_async_event, ibv_internal_ack_async_event);
   ASSIGN_SYM(ibvSymbols, ibv_query_device, ibv_internal_query_device);
-  ASSIGN_SYM(ibvSymbols, "ibv_query_device_ex", ibv_internal_query_device_ex);
+  ASSIGN_SYM(ibvSymbols, ibv_query_device_ex, ibv_internal_query_device_ex);
   ASSIGN_SYM(ibvSymbols, ibv_query_gid, ibv_internal_query_gid);
   ASSIGN_SYM(ibvSymbols, ibv_query_qp, ibv_internal_query_qp);
   ASSIGN_SYM(ibvSymbols, ibv_alloc_pd, ibv_internal_alloc_pd);
@@ -45,7 +45,7 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
 
   ASSIGN_SYM(ibvSymbols, ibv_dereg_mr, ibv_internal_dereg_mr);
   ASSIGN_SYM(ibvSymbols, ibv_create_cq, ibv_internal_create_cq);
-  ASSIGN_SYM(ibvSymbols, "ibv_create_cq_ex", ibv_internal_create_cq_ex);
+  ASSIGN_SYM(ibvSymbols, ibv_create_cq_ex, ibv_internal_create_cq_ex);
   ASSIGN_SYM(ibvSymbols, ibv_destroy_cq, ibv_internal_destroy_cq);
   ASSIGN_SYM(ibvSymbols, ibv_create_qp, ibv_internal_create_qp);
   ASSIGN_SYM(ibvSymbols, ibv_modify_qp, ibv_internal_modify_qp);
@@ -159,6 +159,19 @@ teardown:
 
   if (ibvhandle != NULL) dlclose(ibvhandle);
   return ncclSystemError;
+}
+
+#endif
+
+#ifdef NCCL_BUILD_MLX5DV
+
+#define ASSIGN_SYM(container, symbol, name) container->name= &symbol;
+
+ncclResult_t buildMlx5Symbols(struct ncclMlx5Symbols* mlx5Symbols) {
+  ASSIGN_SYM(mlx5Symbols, mlx5dv_get_clock_info, mlx5dv_internal_get_clock_info);
+  ASSIGN_SYM(mlx5Symbols, mlx5dv_ts_to_ns, mlx5dv_internal_ts_to_ns);
+
+  return ncclSuccess;
 }
 
 #endif

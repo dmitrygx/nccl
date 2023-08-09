@@ -1349,6 +1349,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
 
+  int wrDone = 0;
   while (1) {
     if (r->events == 0) {
       *done = 1;
@@ -1360,7 +1361,6 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
     }
 
     if (!ncclIbDevs[r->verbs->dev].completion_timestamp_mask) {
-      int wrDone = 0;
       struct ibv_wc wcs[4];
       TIME_START(3);
 
@@ -1382,10 +1382,13 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
     } else {
       assert(ncclParamIbUseCqTs() == 1);
 
-      int wrDone;
-      struct ibv_poll_cq_attr attr = {};
       TIME_START(3);
-      NCCLCHECK(wrap_ibv_start_poll(r->verbs->cq_ex, &attr, &wrDone));
+      if (!wrDone) {
+        struct ibv_poll_cq_attr attr = {};
+        NCCLCHECK(wrap_ibv_start_poll(r->verbs->cq_ex, &attr, &wrDone));
+      } else {
+        NCCLCHECK(wrap_ibv_next_poll(r->verbs->cq_ex, &wrDone));
+      }
       if (wrDone == 0) {
         TIME_CANCEL(3);
         wrap_ibv_end_poll(r->verbs->cq_ex);

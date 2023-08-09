@@ -14,10 +14,20 @@ static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
 static ncclResult_t initResult;
 struct ncclIbvSymbols ibvSymbols;
 
+static pthread_once_t mlx5InitOnceControl = PTHREAD_ONCE_INIT;
+static ncclResult_t mlx5InitResult;
+struct ncclMlx5Symbols mlx5Symbols;
+
 ncclResult_t wrap_ibv_symbols(void) {
   pthread_once(&initOnceControl,
                [](){ initResult = buildIbvSymbols(&ibvSymbols); });
   return initResult;
+}
+
+ncclResult_t wrap_mlx5_symbols(void) {
+  pthread_once(&mlx5InitOnceControl,
+               [](){ mlx5InitResult = buildMlx5Symbols(&mlx5Symbols); });
+  return mlx5InitResult;
 }
 
 /* CHECK_NOT_NULL: helper macro to check for NULL symbol */
@@ -199,3 +209,21 @@ ncclResult_t wrap_ibv_event_type_str(char **ret, enum ibv_event_type event) {
   *ret = (char *) ibvSymbols.ibv_internal_event_type_str(event);
   return ncclSuccess;
 }
+
+#ifdef NCCL_BUILD_MLX5DV
+ncclResult_t wrap_mlx5dv_get_clock_info(struct ibv_context *ctx_in, struct mlx5dv_clock_info *clock_info) {
+  IBV_INT_CHECK_RET_ERRNO(mlx5Symbols, mlx5dv_internal_get_clock_info, mlx5dv_internal_get_clock_info(ctx_in, clock_info), 0, "mlx5dv_get_clock_info");
+}
+uint64_t wrap_mlx5dv_ts_to_ns(struct mlx5dv_clock_info *clock_info, uint64_t device_timestamp) {
+  return mlx5Symbols.mlx5dv_internal_ts_to_ns(clock_info, device_timestamp);
+}
+#else
+ncclResult_t wrap_mlx5dv_get_clock_info(struct ibv_context *ctx_in, struct mlx5dv_clock_info *clock_info) {
+  WARN("mlx5dv_get_clock_info() is unsupported, because NCCL was built without mlx5 internals");
+  return ncclSystemError;
+}
+uint64_t wrap_mlx5dv_ts_to_ns(struct mlx5dv_clock_info *clock_info, uint64_t device_timestamp) {
+  WARN("mlx5dv_ts_to_ns() is unsupported, because NCCL was built without mlx5 internals");
+  return 0ul;
+}
+#endif

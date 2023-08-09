@@ -111,3 +111,7 @@ endif
 ifneq ($(RDMA_CORE), 0)
 CXXFLAGS += -DNCCL_BUILD_RDMA_CORE=1
 endif
+
+ifneq ($(MLX5DV), 0)
+CXXFLAGS += -DNCCL_BUILD_MLX5DV=1
+endif
